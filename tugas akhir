@@ -1,0 +1,137 @@
+import discord
+from discord.ext import commands, tasks
+from dotenv import load_dotenv
+import os
+import json
+from datetime import datetime
+
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+if os.path.exists("data_json"): 
+    with open("data_json", "r") as f:
+        data = json.load(f)
+
+else:
+    data = {"to do": {}, "points": {}}
+
+def save_data():
+    with open("data_json", "w") as f:
+        json.dump(data, f, indent=4)
+
+
+@bot.event
+async def on_ready():
+    print(f"Halo semuaa! Bor ini sudah online!")
+    send_jadwal.start()
+
+@bot.command()
+async def addtodo(ctx, *, tugas: str):
+    guild_id = str(ctx.guild.id)
+    # setiap tugas baru, to-do lama langsung diganti
+    data["todos"][guild_id] = [tugas]
+    save_data()
+    await ctx.send(f"To-do diganti! Sekarang tugasnya: '{tugas}'")
+
+    @bot.command()
+    async def listtodo(ctx):
+        guild_id = str(ctx.guild.id)
+        todos = data["todos"].get(guild_id, [])
+        if not todos:
+            await ctx.send("Belum ada to-do!")
+        else:
+            msg = "\n".join([f"{i+1}. {t}" for i, t in enumerate(todos)])
+            await ctx.send(f"Daftar To-Do:\n{msg}")
+
+@bot.command()
+async def deltodo(ctx, nomor: int):
+    guild_id = str(ctx.guild.id)
+    todos = data["todos"].get(guild_id, [])
+    if 0 < nomor <= len(todos):
+        removed = todos.pop(nomor - 1)
+        save_data()
+        await ctx.send(f"Tugas '{removed}' dihapus.")
+    else:
+        await ctx.send("Nomor tugas tidak valid.")
+
+jadwal = {
+    "Senin": ["Matematika", "Bahasa Indonesia"],
+    "Selasa": ["IPA", "IPS"],
+    "Rabu": ["Bahasa Inggris"],
+    "Kamis": ["PJOK", "Seni Budaya"],
+    "Jumat": ["Agama", "PPKn"],
+}
+
+@bot.command()
+async def jadwalhariini(ctx):
+    hari = datetime.now().strftime("%A")
+    hari_id = {
+        "Monday": "Senin",
+        "Tuesday": "Selasa",
+        "Wednesday": "Rabu",
+        "Thursday": "Kamis",
+        "Friday": "Jumat",
+        "Saturday": "Sabtu",
+        "Sunday": "Minggu",
+    }[hari]
+    
+    pelajaran = jadwal.get(hari_id, [])
+    if pelajaran:
+        daftar = "\n".join([f"- {p}" for p in pelajaran])
+        await ctx.send(f"Jadwal {hari_id}:\n{daftar}")
+    else:
+        await ctx.send(f"Hari {hari_id}: libur!")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    user_id = str(message.author.id)
+    data["points"][user_id] = data["points"].get(user_id, 0) + 1
+    save_data()
+
+    await bot.process_commands(message)
+
+@bot.command()
+async def poin(ctx):
+    user_id = str(ctx.author.id)
+    poin = data["points"].get(user_id, 0)
+    await ctx.send(f"Kamu punya {poin} poin!")
+
+@bot.command()
+async def top(ctx):
+    sorted_points = sorted(data["points"].items(), key=lambda x: x[1], reverse=True)
+    leaderboard = ""
+    for i, (uid, p) in enumerate(sorted_points[:5]):
+        user = await bot.fetch_user(int(uid))
+        leaderboard += f"{i+1}. {user.name} — {p} poin\n"
+    await ctx.send(f"Top 5 Member Aktif:\n{leaderboard}")
+
+@tasks.loop(hours=24)
+async def send_jadwal():
+    channel_id = 123456789012345678  # ganti dengan ID channel kamu
+    channel = bot.get_channel(channel_id)
+    if channel:
+        hari = datetime.now().strftime("%A")
+        hari_id = {
+            "Monday": "Senin",
+            "Tuesday": "Selasa",
+            "Wednesday": "Rabu",
+            "Thursday": "Kamis",
+            "Friday": "Jumat",
+            "Saturday": "Sabtu",
+            "Sunday": "Minggu",
+        }[hari]
+        pelajaran = jadwal.get(hari_id, [])
+        if pelajaran:
+            daftar = "\n".join([f"- {p}" for p in pelajaran])
+            await channel.send(f"Selamat pagi! Jadwal {hari_id} hari ini:\n{daftar}")
+
+bot.run(TOKEN) 
